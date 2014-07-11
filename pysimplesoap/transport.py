@@ -87,7 +87,12 @@ else:
             kwargs = {}
             if proxy:
                 import socks
-                kwargs['proxy_info'] = httplib2.ProxyInfo(proxy_type=socks.PROXY_TYPE_HTTP, **proxy)
+                
+                socks.setdefaultproxy(socks.PROXY_TYPE_HTTP,proxy['proxy_host'], int(proxy['proxy_port']))
+                socks.wrapmodule(httplib2)
+                
+                kwargs['proxy_info'] = httplib2.ProxyInfo(proxy_type=socks.PROXY_TYPE_HTTP, proxy_host=proxy['proxy_host'], proxy_port=int(proxy['proxy_port']))
+                
                 log.info("using proxy %s" % proxy)
 
             # set optional parameters according supported httplib2 version

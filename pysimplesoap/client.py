@@ -580,7 +580,7 @@ class SoapClient(object):
                 # Handle Multiple Namespaces
                 binding_namespace_prefix = get_namespace_prefix(port['binding'])
                 binding_namespace = port.get_namespace_uri(binding_namespace_prefix)
-                log.debug('Binding: %s, namespace: %s ' % (binding_name,binding_namespace))
+                #log.debug('Binding: %s, namespace: %s ' % (binding_name,binding_namespace))
                 
                 address = port('address', ns=list(soap_uris.values()), error=False)
                 location = address and address['location'] or None
@@ -662,7 +662,7 @@ class SoapClient(object):
                 schema = wsdl.types('schema', ns=xsd_uri)
                 attrs = dict(schema[:])
                 self.namespace = attrs.get('targetNamespace', self.namespace)
-                log.debug("Namespace is: %s " % (self.namespace))
+                #log.debug("Namespace is: %s " % (self.namespace))
             if not self.namespace or self.namespace == "urn:DefaultNamespace":
                 self.namespace = wsdl['targetNamespace'] or self.namespace
                 
@@ -671,11 +671,13 @@ class SoapClient(object):
 
         # process current wsdl schema (if any):
         if wsdl('types', error=False):
-            for schema in wsdl.types('schema', ns=xsd_uri):
-                preprocess_schema(schema, imported_schemas, elements, xsd_uri, 
-                                  self.__soap_server, self.http, cache, 
-                                  force_download, self.wsdl_basedir, 
-                                  global_namespaces=global_namespaces)
+            # types elements in imported wsdl also
+            for typeElement in wsdl.types:                
+                for schema in typeElement('schema', ns=xsd_uri):
+                    preprocess_schema(schema, imported_schemas, elements, xsd_uri, 
+                                      self.__soap_server, self.http, cache, 
+                                      force_download, self.wsdl_basedir, 
+                                      global_namespaces=global_namespaces)
 
         # 2nd phase: alias, postdefined elements, extend bases, convert lists
         postprocess_element(elements, [])
@@ -694,7 +696,7 @@ class SoapClient(object):
                 type_uri = part.get_namespace_uri(type_ns) 
                 part_name = part['name'] or None
 
-                log.debug("type_ns: %s, type_uri: %s, element name:%s, part name: %s" %(type_ns, type_uri, element_name, part_name))
+                #log.debug("type_ns: %s, type_uri: %s, element name:%s, part name: %s" %(type_ns, type_uri, element_name, part_name))
                 if type_uri == xsd_uri:
                     element_name = get_local_name(element_name)
                     fn = REVERSE_TYPE_MAP.get(element_name, None)
