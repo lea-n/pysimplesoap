@@ -314,7 +314,8 @@ class SoapClient(object):
         """Pre and post process SOAP call, input and output parameters using WSDL"""
         soap_uri = soap_namespaces[self.__soap_ns]
         operation = self.get_operation(method)
-
+        log.debug("Operation: %s, Namespace: %s" % (operation['name'] , operation['namespace']))
+        
         # get i/o type declarations:
         input = operation['input']
         output = operation['output']
@@ -481,16 +482,16 @@ class SoapClient(object):
             headers,
         )
 
-    def wsdl_parse(self, url, cache=False):
+    def wsdl_parse(self, url, cache=False, basestring=None):
         """Parse Web Service Description v1.1"""
-
+        
         log.debug('Parsing wsdl url: %s' % url)
         # Try to load a previously parsed wsdl:
         force_download = False
         if cache:
             # make md5 hash of the url for caching...
             filename_pkl = '%s.pkl' % hashlib.md5(url).hexdigest()
-            if isinstance(cache, basestring):
+            if isinstance(cache, basestring): #TODO: basestring is defined nowhere - added as parameter
                 filename_pkl = os.path.join(cache, filename_pkl)
             if os.path.exists(filename_pkl):
                 log.debug('Unpickle file %s' % (filename_pkl, ))
@@ -576,16 +577,23 @@ class SoapClient(object):
             serv['documentation'] = service['documentation'] or ''
             for port in service.port:
                 binding_name = get_local_name(port['binding'])
+                # Handle Multiple Namespaces
+                binding_namespace_prefix = get_namespace_prefix(port['binding'])
+                binding_namespace = port.get_namespace_uri(binding_namespace_prefix)
+                log.debug('Binding: %s, namespace: %s ' % (binding_name,binding_namespace))
+                
                 address = port('address', ns=list(soap_uris.values()), error=False)
                 location = address and address['location'] or None
                 soap_uri = address and soap_uris.get(address.get_prefix())
                 soap_ver = soap_uri and soap_ns.get(soap_uri)
                 bindings[binding_name] = {'name': binding_name,
+                                          'namespace': binding_namespace,
                                           'service_name': service_name,
                                           'location': location,
                                           'soap_uri': soap_uri,
                                           'soap_ver': soap_ver, }
                 serv['ports'][port['name']] = bindings[binding_name]
+                
 
         # create an default service if none is given in the wsdl:
         if not services:
@@ -593,6 +601,8 @@ class SoapClient(object):
 
         for binding in wsdl.binding:
             binding_name = binding['name']
+            binding_type=binding['type']
+            
             soap_binding = binding('binding', ns=list(soap_uris.values()), error=False)
             transport = soap_binding and soap_binding['transport'] or None
             style = soap_binding and soap_binding['style'] or None  # rpc
@@ -600,6 +610,7 @@ class SoapClient(object):
             # create the binding in the default service: 
             if not binding_name in bindings:
                 bindings[binding_name] = {'name': binding_name, 'style': style,
+                                          'namespace' : '',
                                           'service_name': '', 'location': '', 
                                           'soap_uri': '', 'soap_ver': 'soap11'}
                 serv['ports'][''] = bindings[binding_name]
@@ -618,6 +629,10 @@ class SoapClient(object):
                 d = operations[binding_name].setdefault(op_name, {})
                 bindings[binding_name]['operations'][op_name] = d
                 d.update({'name': op_name})
+                
+                # TODO: Check RFC - Is operation namespace from binding,PorType/Interface, or message(as it is)?
+                # Add binding namespace as the operation namespace
+                d['namespace']= bindings[binding_name]['namespace']
                 d['parts'] = {}
                 # input and/or ouput can be not present!
                 input = operation('input', error=False)
@@ -647,6 +662,7 @@ class SoapClient(object):
                 schema = wsdl.types('schema', ns=xsd_uri)
                 attrs = dict(schema[:])
                 self.namespace = attrs.get('targetNamespace', self.namespace)
+                log.debug("Namespace is: %s " % (self.namespace))
             if not self.namespace or self.namespace == "urn:DefaultNamespace":
                 self.namespace = wsdl['targetNamespace'] or self.namespace
                 
@@ -671,9 +687,14 @@ class SoapClient(object):
                 if not element_name:
                     # some implementations (axis) uses type instead
                     element_name = part['type']
+
                 type_ns = get_namespace_prefix(element_name)
-                type_uri = wsdl.get_namespace_uri(type_ns)
+                #Call get_namespace_uri from child element to avoid 
+                # namespace prefixes issues with imported wsdl
+                type_uri = part.get_namespace_uri(type_ns) 
                 part_name = part['name'] or None
+
+                log.debug("type_ns: %s, type_uri: %s, element name:%s, part name: %s" %(type_ns, type_uri, element_name, part_name))
                 if type_uri == xsd_uri:
                     element_name = get_local_name(element_name)
                     fn = REVERSE_TYPE_MAP.get(element_name, None)
@@ -729,19 +750,26 @@ class SoapClient(object):
                                     headers.update(hdr)
                                 else:
                                     pass # not enought info to search the header message:
-                            op['input'] = get_message(messages, input_msg, op['parts'].get('input_body'), op['parameter_order'])
+
+                            op['input'] = get_message(messages, input_msg, op['parts'].get('input_body'), op['parameter_order'])                            
                             op['header'] = headers
                             try:
                                 element = list(op['input'].values())[0]
-                                ns_uri = element.namespaces[None]
+                                #Log element # TODO namespace !
+                                ns_uri = element.namespaces[None]                                
                                 qualified = element.qualified
                             except (AttributeError, KeyError) as e:
                                 # TODO: fix if no parameters parsed or "variants"
+                                # Are the namespaces of operation and message really the same?
+                                # Maybe the namespace of the operation is the namespace 
+                                # of the binding which implement the Interface/PortType ?
+                                # Or it is the namespace of the PortType. But the message? 
+                                # TODO: RFC Check 
                                 ns = get_namespace_prefix(operation.input['message'])
                                 ns_uri = operation.get_namespace_uri(ns)
                                 qualified = None
                             if ns_uri:
-                                op['namespace'] = ns_uri
+                                #op['namespace'] = ns_uri
                                 op['qualified'] = qualified
                         else:
                             op['input'] = None
